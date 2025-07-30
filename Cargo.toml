@@ -1,0 +1,39 @@
+[workspace]
+members = [
+    ".",
+    "crates/mc-link-compat",
+    "crates/mc-link-config",
+    "crates/mc-link-connector",
+    "crates/mc-link-core",
+    "crates/mc-link-manager",
+]
+
+[package]
+name = "mc-link"
+version = "0.1.0"
+edition = "2024"
+
+[workspace.dependencies]
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = { version = "1.0" }
+tokio = { version = "1", features = ["full"] }
+toml = "0.9"
+futures = "0.3"
+miette = { version = "7.6", features = ["fancy"] }
+walkdir = "2.5"
+directories = "6"
+anyhow = "1"
+derive_more = { version = "2", features = ["full"] }
+tosic-utils = { version = "0.2.4", features = ["tracing"], registry = "gitea"}
+tracing = { version = "0.1.41", features = ["attributes"]}
+tracing-subscriber = "0.3.19"
+tracing-appender = "0.2"
+chrono = { version = "0.4", features = ["serde"] }
+
+[dependencies]
+mc-link-config = { path = "crates/mc-link-config" }
+mc-link-manager = { path = "crates/mc-link-manager" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+mc-link-core = { path = "crates/mc-link-core" }

@@ -1,0 +1,12 @@
+[package]
+name = "mc-link-connector"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mc-link-core = { path = "../mc-link-core" }
+mc-link-config = { path = "../mc-link-config" }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+suppaftp = { version = "6.0", features = ["async"] }
+tracing.workspace = true
