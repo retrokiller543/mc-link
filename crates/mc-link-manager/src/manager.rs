@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use tracing::debug;
-use mc_link_core::{ServerConnector, ModInfo, ProgressCallback};
+use mc_link_core::{ServerConnector, ProgressCallback};
 use mc_link_compat::{CompatConfig, check_compatibility};
 use mc_link_config::{ConnectionType, ServerConfig};
 use mc_link_connector::{Connector, FtpConnector, LocalConnector};
@@ -16,12 +16,12 @@ where
     C: ServerConnector,
 {
     /// The underlying connector for server communication
-    connector: C,
+    pub(crate) connector: C,
     server_config: Option<&'static ServerConfig>,
     /// Cached server structure (None = not scanned yet)
     structure: Option<MinecraftStructure>,
     /// Whether to enable parallel processing (default: true)
-    parallel_enabled: bool,
+    pub(crate) parallel_enabled: bool,
 }
 
 impl MinecraftManager<Connector> {
@@ -91,10 +91,12 @@ where
     ///
     /// This will scan the mods directory and other relevant folders,
     /// reading mod metadata in parallel for performance.
-    #[tracing::instrument]
+    #[tracing::instrument(skip(self))]
     pub async fn scan(&mut self) -> Result<&MinecraftStructure> {
+        use tracing::info;
+        
         // Ensure we're connected
-        if !self.connector.is_connected() {
+        if !self.connector.is_connected().await {
             debug!("Not connected, attempting to connect...");
             self.connector.connect().await?;
         }
@@ -105,7 +107,23 @@ where
         let mut structure = MinecraftStructure::new(PathBuf::from("."));
         
         // Scan mods directory
+        info!("Starting mod directory scan...");
         self.scan_mods_directory(&mut structure).await?;
+        info!("Found {} mods total", structure.mods.mods.len());
+        
+        // Log each mod found
+        for (i, mod_info) in structure.mods.mods.iter().enumerate() {
+            info!(
+                index = i,
+                mod_id = %mod_info.id,
+                mod_name = %mod_info.name,
+                version = ?mod_info.version,
+                file_path = %mod_info.file_path.display(),
+                side = ?mod_info.side,
+                loader = ?mod_info.loader,
+                "Scanned mod"
+            );
+        }
         
         // Scan other directories
         structure.config.exists = self.check_directory_exists(&structure.config.path).await?;
@@ -146,7 +164,7 @@ where
             }
         };
         
-        let other_structure = match other.structure { 
+        let other_structure = match other.structure {
             Some(ref s) => s,
             None => {
                 other.scan().await?;
@@ -154,17 +172,46 @@ where
             }
         };
         
-        let other_structure = other.structure.as_ref()
-            .ok_or_else(|| ManagerError::InvalidStructure {
-                reason: "Other structure not scanned. Call scan() on other manager first.".to_string(),
-            })?;
-        
         // Perform compatibility check
+        use tracing::info;
+        info!(
+            "Starting compatibility check: {} source mods vs {} target mods",
+            self_structure.mods.mods.len(),
+            other_structure.mods.mods.len()
+        );
+        
         let compat_result = check_compatibility(
             &self_structure.mods.mods,
             &other_structure.mods.mods,
             compat_config,
         )?;
+        
+        // Log detailed compatibility results
+        info!(
+            is_compatible = compat_result.is_compatible,
+            missing_on_server = compat_result.missing_on_server.len(),
+            missing_on_client = compat_result.missing_on_client.len(),
+            version_mismatches = compat_result.version_mismatches.len(),
+            ignored_mods = compat_result.ignored_mods.len(),
+            "Compatibility check completed"
+        );
+        
+        // Log missing mods details
+        for mod_info in &compat_result.missing_on_server {
+            info!(
+                mod_name = %mod_info.name,
+                version = ?mod_info.version,
+                "Missing on server (will add)"
+            );
+        }
+        
+        for mod_info in &compat_result.missing_on_client {
+            info!(
+                mod_name = %mod_info.name,
+                version = ?mod_info.version,
+                "Missing on client (will remove from server)"
+            );
+        }
         
         // Build sync plan based on compatibility results
         let mut plan = SyncPlan::new();
@@ -181,7 +228,7 @@ where
         // Handle missing mods on source (self) - these should be removed from target
         for extra_mod in &compat_result.missing_on_client {
             plan.add_action(SyncAction::RemoveMod {
-                mod_id: extract_mod_id(extra_mod),
+                mod_id: extra_mod.name.clone(), // Use the mod name as ID
                 mod_info: extra_mod.clone(),
                 target: SyncTarget::Server,
             });
@@ -191,11 +238,12 @@ where
         for version_mismatch in &compat_result.version_mismatches {
             // Find the source mod for the update
             if let Some(source_mod) = self_structure.mods.mods.iter()
-                .find(|m| extract_mod_id(m) == version_mismatch.mod_id) {
-                
+                .find(|m| m.name == version_mismatch.mod_name) {
+
                 if let Some(target_mod) = other_structure.mods.mods.iter()
-                    .find(|m| extract_mod_id(m) == version_mismatch.mod_id) {
-                    
+                    .find(|m| m.name == version_mismatch.mod_name) {
+
+
                     plan.add_action(SyncAction::UpdateMod {
                         mod_id: version_mismatch.mod_id.clone(),
                         from_version: version_mismatch.server_version.clone(),
@@ -229,7 +277,7 @@ where
         plan: &SyncPlan,
         _progress: Option<ProgressCallback>,
     ) -> Result<()> {
-        if !self.connector.is_connected() {
+        if !self.connector.is_connected().await {
             self.connector.connect().await?;
         }
         
@@ -316,94 +364,12 @@ where
         self.scan().await
     }
     
-    #[tracing::instrument]
-    async fn scan_mods_directory(&mut self, structure: &mut MinecraftStructure) -> Result<()> {
-        let mods_path = &structure.mods.path;
-        
-        // Check if mods directory exists
-        let mod_files = self.connector.list_files(&mods_path).await?;
-        structure.mods.exists = !mod_files.is_empty();
-        
-        if !structure.mods.exists {
-            return Ok(());
-        }
-        
-        // Filter for JAR files
-        let jar_files: Vec<_> = mod_files.into_iter()
-            .filter(|path| {
-                path.extension()
-                    .and_then(|ext| ext.to_str())
-                    .map(|ext| ext.eq_ignore_ascii_case("jar"))
-                    .unwrap_or(false)
-            })
-            .collect();
-        
-        if self.parallel_enabled {
-            // Process JAR files in parallel
-            self.scan_mods_parallel(&jar_files, structure).await?;
-        } else {
-            // Process JAR files sequentially
-            self.scan_mods_sequential(&jar_files, structure).await?;
-        }
-        
-        Ok(())
-    }
-    
-    async fn scan_mods_parallel(
-        &mut self,
-        jar_files: &[PathBuf],
-        structure: &mut MinecraftStructure,
-    ) -> Result<()> {
-        // For parallel processing, we'd need to download files first
-        // This is a simplified version - in practice, you'd want to:
-        // 1. Download all JAR files to a temp directory
-        // 2. Process them in parallel
-        // 3. Clean up temp files
-        
-        // For now, fall back to sequential processing
-        self.scan_mods_sequential(jar_files, structure).await
-    }
-    
-    async fn scan_mods_sequential(
-        &mut self,
-        jar_files: &[PathBuf],
-        structure: &mut MinecraftStructure,
-    ) -> Result<()> {
-        for jar_file in jar_files {
-            // Create basic mod info from filename
-            let mod_name = jar_file.file_stem()
-                .and_then(|name| name.to_str())
-                .unwrap_or("unknown")
-                .to_string();
-            
-            let mod_info = ModInfo {
-                name: mod_name,
-                version: None, // TODO: Extract from JAR metadata when downloaded
-                file_path: jar_file.clone(),
-                enabled: true,
-            };
-            
-            structure.mods.mods.push(mod_info);
-        }
-        
-        Ok(())
-    }
-    
     async fn check_directory_exists(&self, path: &std::path::Path) -> Result<bool> {
         let files = self.connector.list_files(&path.to_path_buf()).await;
         Ok(files.is_ok())
     }
 }
 
-/// Extracts a mod ID from ModInfo for comparison purposes.
-fn extract_mod_id(mod_info: &ModInfo) -> String {
-    // Simple extraction - in practice, this should use the same logic
-    // as the compatibility checker
-    mod_info.file_path.file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or(&mod_info.name)
-        .to_string()
-}
 
 impl<C> std::fmt::Debug for MinecraftManager<C>
 where

@@ -9,4 +9,5 @@ mc-link-config = { path = "../mc-link-config" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 suppaftp = { version = "6.0", features = ["async"] }
+futures-lite = "2.0"
 tracing.workspace = true

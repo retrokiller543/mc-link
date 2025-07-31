@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::future::Future;
 use serde::{Deserialize, Serialize};
 use crate::Result;
 
@@ -23,10 +24,17 @@ use crate::Result;
 #[macro_export]
 macro_rules! ensure_connected {
     ($conn:expr) => {
-        if !$conn.is_connected() {
+        if !$conn.is_connected().await {
             return Err(CoreError::ConnectionFailed {
-                    message: "Not connected to server".to_string(),
-                });
+                message: "Not connected to server".to_string(),
+            });
+        }
+    };
+    ($conn:expr, $msg:expr) => {
+        if !$conn.is_connected().await {
+            return Err(CoreError::ConnectionFailed {
+                message: $msg.to_string(),
+            });
         }
     };
 }
@@ -61,9 +69,37 @@ pub struct ServerInfo {
     pub last_seen: Option<u64>,
 }
 
+/// Represents the side a mod runs on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModSide {
+    /// Mod runs on client only
+    Client,
+    /// Mod runs on server only
+    Server,
+    /// Mod runs on both client and server
+    Both,
+    /// Side is unknown or unspecified
+    Unknown,
+}
+
+/// Supported mod loaders.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ModLoader {
+    /// NeoForge mod loader
+    NeoForge,
+    /// Fabric mod loader
+    Fabric,
+    /// Legacy Forge mod loader
+    Forge,
+    /// Unknown or unsupported mod loader
+    Unknown,
+}
+
 /// Information about a single mod installed on the server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModInfo {
+    /// Unique mod identifier (used for comparison)
+    pub id: String,
     /// Display name of the mod
     pub name: String,
     /// Version string of the mod, if available
@@ -72,6 +108,12 @@ pub struct ModInfo {
     pub file_path: PathBuf,
     /// Whether the mod is currently enabled
     pub enabled: bool,
+    /// Which side(s) the mod runs on
+    pub side: ModSide,
+    /// Mod loader type
+    pub loader: ModLoader,
+    /// Raw metadata for advanced processing
+    pub raw_metadata: std::collections::HashMap<String, serde_json::Value>,
 }
 
 /// Callback function for tracking file transfer progress.
@@ -91,7 +133,7 @@ pub trait ServerConnector: Send + Sync {
     fn disconnect(&mut self) -> impl Future<Output = Result<()>> + Send;
     
     /// Check if currently connected to the server
-    fn is_connected(&self) -> bool;
+    fn is_connected(&self) -> impl Future<Output = bool> + Send;
     
     /// Get server information (version, properties, mods, etc.)
     fn get_server_info(&self) -> impl Future<Output = Result<ServerInfo>> + Send;

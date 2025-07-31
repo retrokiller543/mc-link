@@ -30,10 +30,14 @@ tracing = { version = "0.1.41", features = ["attributes"]}
 tracing-subscriber = "0.3.19"
 tracing-appender = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4.0", features = ["derive"] }
 
 [dependencies]
 mc-link-config = { path = "crates/mc-link-config" }
 mc-link-manager = { path = "crates/mc-link-manager" }
+mc-link-core = { path = "crates/mc-link-core" }
 tokio = { workspace = true }
 tracing = { workspace = true }
-mc-link-core = { path = "crates/mc-link-core" }
+clap = { workspace = true }
+serde_json = { workspace = true }
+miette = { workspace = true }

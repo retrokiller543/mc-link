@@ -9,6 +9,7 @@ pub mod actions;
 pub mod error;
 pub mod manager;
 pub mod prelude;
+pub mod scanning;
 pub mod structure;
 
 pub use actions::*;

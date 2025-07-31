@@ -107,10 +107,14 @@ impl LocalConnector {
                         .to_string();
                     
                     mods.push(ModInfo {
+                        id: name.clone(),
                         name,
                         version: None,
                         file_path: path,
                         enabled: true,
+                        side: mc_link_core::ModSide::Unknown,
+                        loader: mc_link_core::ModLoader::Unknown,
+                        raw_metadata: std::collections::HashMap::new(),
                     });
                 }
             }
@@ -147,8 +151,10 @@ impl ServerConnector for LocalConnector {
         }
     }
     
-    fn is_connected(&self) -> bool {
-        self.connected
+    fn is_connected(&self) -> impl Future<Output = bool> + Send {
+        async move {
+            self.connected
+        }
     }
     
     fn get_server_info(&self) -> impl Future<Output = Result<ServerInfo>> + Send {

@@ -9,6 +9,7 @@ pub mod error;
 pub mod prelude;
 pub mod server;
 pub mod logging;
+pub mod traits;
 
 pub use error::*;
 pub use server::*;

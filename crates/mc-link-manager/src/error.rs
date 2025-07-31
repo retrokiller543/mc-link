@@ -22,6 +22,9 @@ pub enum ManagerError {
     /// Parallel processing error
     #[error("Parallel operation failed: {operation} - {reason}")]
     ParallelError { operation: String, reason: String },
+
+    #[error("Failed to perform file operation {operation} - {reason}")]
+    FileOperationFailed { operation: String, reason: String },
 }
 
 /// Result type for manager operations.

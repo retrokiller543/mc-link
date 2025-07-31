@@ -51,11 +51,13 @@ impl ServerConnector for Connector {
         }
     }
 
-    fn is_connected(&self) -> bool {
-        match self {
-            Connector::Local(connector) => connector.is_connected(),
-            Connector::Ftp(connector) => connector.is_connected(),
-        }
+    fn is_connected(&self) -> impl Future<Output = bool> + Send {
+       async move {
+           match self {
+               Connector::Local(connector) => connector.is_connected().await,
+               Connector::Ftp(connector) => connector.is_connected().await,
+           }
+       }
     }
 
 
