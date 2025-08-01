@@ -34,6 +34,16 @@ config_struct! {
         pub log_file: LogFileNameFormat = LogFileNameFormat::default(),
         /// whether to log to stdout in addition to file
         pub log_to_stdout: bool = false,
+        /// cache time-to-live in hours
+        pub cache_ttl_hours: u32 = 24,
+        /// maximum cache size in megabytes
+        pub cache_max_size_mb: u32 = 500,
+        /// whether caching is enabled
+        pub cache_enabled: bool = true,
+        /// whether to use global JAR cache (recommended)
+        pub jar_cache_global: bool = true,
+        /// whether to invalidate all caches on startup
+        pub cache_invalidate_on_startup: bool = false,
     }
 }
 

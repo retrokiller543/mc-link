@@ -45,3 +45,4 @@ ratatui = "0.24"
 crossterm = "0.27"
 ratatui-textarea = "0.4"
 serde = { workspace = true }
+indicatif = "0.17"

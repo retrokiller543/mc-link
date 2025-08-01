@@ -1,4 +1,5 @@
 mod cli;
+mod progress;
 mod tui;
 
 use clap::Parser;
@@ -140,8 +141,7 @@ async fn handle_cli_command(
         }
         Commands::Remove { target } => {
             if target.is_interactive() {
-                println!("Starting interactive mode for removing server...");
-                // TODO: Implement interactive server removal TUI
+                return Err("Interactive server removal is not yet implemented. Use --id to specify a server.".into());
             } else if let Some(id) = &target.id {
                 let mut config_manager = mc_link_config::ConfigManager::new()?;
 
@@ -167,14 +167,23 @@ async fn handle_cli_command(
         }
         Commands::Scan { target } => {
             if target.is_interactive() {
-                println!("Starting interactive mode for scanning server...");
-                // TODO: Implement interactive server selection TUI
+                return Err("Interactive server scanning is not yet implemented. Use --id to specify a server.".into());
             } else if let Some(id) = &target.id {
                 if let Some(server_config) = config.get_server(id) {
                     println!("Scanning server '{}'...", server_config.name);
-                    let mut manager = MinecraftManager::from_config(server_config);
 
-                    match manager.scan().await {
+                    // Create progress reporter for CLI
+                    let (progress_reporter, progress_task) =
+                        progress::create_cli_progress_reporter();
+
+                    let mut manager = MinecraftManager::from_config(server_config)
+                        .with_caching()?
+                        .with_progress_reporter(progress_reporter);
+
+                    let scan_result = manager.scan().await;
+                    progress_task.abort();
+
+                    match scan_result {
                         Ok(structure) => {
                             println!("✓ Scan complete!");
                             println!("Found {} mods on server.", structure.mods.mods.len());
@@ -198,8 +207,7 @@ async fn handle_cli_command(
         }
         Commands::Compare { targets } => {
             if targets.is_interactive() {
-                println!("Starting interactive mode for comparing servers...");
-                // TODO: Implement interactive server selection TUI
+                return Err("Interactive server comparison is not yet implemented. Use --source and --target to specify servers.".into());
             } else if let (Some(source), Some(target)) = (&targets.source, &targets.target) {
                 let source_config = config
                     .get_server(source)
@@ -213,16 +221,23 @@ async fn handle_cli_command(
                     source_config.name, target_config.name
                 );
 
-                let mut source_manager = MinecraftManager::from_config(source_config);
-                let mut target_manager = MinecraftManager::from_config(target_config);
+                let (progress_reporter, progress_task) = progress::create_cli_progress_reporter();
+
+                let mut source_manager = MinecraftManager::from_config(source_config)
+                    .with_caching()?
+                    .with_progress_reporter(progress_reporter);
+                let mut target_manager =
+                    MinecraftManager::from_config(target_config).with_caching()?;
 
                 use mc_link_manager::prelude::CompatConfig;
                 let compat_config = CompatConfig::default();
 
-                match source_manager
+                let compare_result = source_manager
                     .compare_with(&mut target_manager, &compat_config)
-                    .await
-                {
+                    .await;
+                progress_task.abort();
+
+                match compare_result {
                     Ok(plan) => {
                         println!("✓ Comparison complete!");
                         if targets.detailed {
@@ -239,8 +254,7 @@ async fn handle_cli_command(
         }
         Commands::Sync { targets } => {
             if targets.is_interactive() {
-                println!("Starting interactive mode for syncing servers...");
-                // TODO: Implement interactive server selection TUI
+                return Err("Interactive server syncing is not yet implemented. Use --source and --target to specify servers.".into());
             } else if let (Some(source), Some(target)) = (&targets.source, &targets.target) {
                 let source_config = config
                     .get_server(source)
@@ -273,16 +287,23 @@ async fn handle_cli_command(
                     }
                 }
 
-                let mut source_manager = MinecraftManager::from_config(source_config);
-                let mut target_manager = MinecraftManager::from_config(target_config);
+                let (progress_reporter, progress_task) = progress::create_cli_progress_reporter();
+
+                let mut source_manager = MinecraftManager::from_config(source_config)
+                    .with_caching()?
+                    .with_progress_reporter(progress_reporter);
+                let mut target_manager =
+                    MinecraftManager::from_config(target_config).with_caching()?;
 
                 use mc_link_manager::prelude::CompatConfig;
                 let compat_config = CompatConfig::default();
 
-                match source_manager
+                let sync_result = source_manager
                     .compare_with(&mut target_manager, &compat_config)
-                    .await
-                {
+                    .await;
+                progress_task.abort();
+
+                match sync_result {
                     Ok(plan) => {
                         if targets.dry_run {
                             println!("✓ Dry run complete! Sync plan:");
@@ -290,15 +311,9 @@ async fn handle_cli_command(
                         } else {
                             println!("✓ Sync plan generated!");
                             println!(
-                                "Note: Actual sync execution would require additional implementation."
+                                "Note: Actual sync execution is not yet implemented. This shows what would be done."
                             );
                             println!("Plan details: {plan:#?}");
-                            // TODO: Implement actual sync execution
-                            // This would involve:
-                            // 1. Downloading missing mods from source
-                            // 2. Uploading to target server
-                            // 3. Removing mods that shouldn't be there
-                            // 4. Handling version conflicts
                         }
                     }
                     Err(e) => {
@@ -309,8 +324,7 @@ async fn handle_cli_command(
         }
         Commands::Toggle { target } => {
             if target.is_interactive() {
-                println!("Starting interactive mode for toggling server...");
-                // TODO: Implement interactive server selection TUI
+                return Err("Interactive server toggling is not yet implemented. Use --id to specify a server.".into());
             } else if let Some(id) = &target.id {
                 let mut config_manager = mc_link_config::ConfigManager::new()?;
 

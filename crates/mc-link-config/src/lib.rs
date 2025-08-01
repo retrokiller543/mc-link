@@ -124,6 +124,11 @@ impl ConfigManager {
         &self.config_dir
     }
 
+    /// Gets the cache directory path using platform-specific conventions.
+    pub fn cache_dir(&self) -> PathBuf {
+        PROJECT_DIRS.cache_dir().join("mc-link")
+    }
+
     /// Saves all configuration to disk.
     pub fn save(&self) -> Result<()> {
         self.manager.save(&self.config_dir)?;

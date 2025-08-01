@@ -13,3 +13,6 @@ tracing-subscriber.workspace = true
 tracing-appender.workspace = true
 chrono = { workspace = true }
 mc-link-config = { path = "../mc-link-config" }
+sha2 = "0.10"
+tempfile = "3.20.0"
+tokio = { workspace = true }

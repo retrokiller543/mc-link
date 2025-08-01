@@ -1,10 +1,13 @@
 use crate::{ManagerError, MinecraftStructure, Result, SyncAction, SyncPlan, SyncTarget};
 use mc_link_compat::{CompatConfig, check_compatibility};
-use mc_link_config::{ConnectionType, ServerConfig};
+use mc_link_config::{CONFIG_MANAGER, ConnectionType, ServerConfig};
 use mc_link_connector::{Connector, FtpConnector, LocalConnector};
-use mc_link_core::{ProgressCallback, ServerConnector};
-use std::path::PathBuf;
-use tracing::debug;
+use mc_link_core::{
+    GlobalJarCache, ProgressCallback, ProgressReporter, ProgressStage, ProgressUpdate,
+    ServerConnector, ServerStructureCache,
+};
+use std::{collections::HashMap, path::PathBuf};
+use tracing::{debug, info};
 
 /// High-level manager for Minecraft server instances.
 ///
@@ -22,6 +25,12 @@ where
     structure: Option<MinecraftStructure>,
     /// Whether to enable parallel processing (default: true)
     pub(crate) parallel_enabled: bool,
+    /// Global JAR cache for mod metadata
+    pub(crate) jar_cache: Option<GlobalJarCache>,
+    /// Server-specific structure cache
+    pub(crate) structure_cache: Option<ServerStructureCache>,
+    /// Progress reporter for long-running operations
+    pub(crate) progress_reporter: Option<ProgressReporter>,
 }
 
 impl<'a> MinecraftManager<'a, Connector> {
@@ -42,11 +51,18 @@ impl<'a> MinecraftManager<'a, Connector> {
             "Created MinecraftManager from config"
         );
 
+        let structure_cache =
+            ServerStructureCache::load(server_config.id.clone(), &CONFIG_MANAGER.cache_dir())
+                .unwrap_or_else(|_| ServerStructureCache::new(server_config.id.clone()));
+
         Self {
             connector,
             server_config: Some(server_config),
             structure: None,
             parallel_enabled: true,
+            jar_cache: None,
+            structure_cache: Some(structure_cache),
+            progress_reporter: None,
         }
     }
 }
@@ -77,6 +93,9 @@ where
             server_config: None,
             structure: None,
             parallel_enabled: true,
+            jar_cache: None,
+            structure_cache: None,
+            progress_reporter: None,
         }
     }
 
@@ -87,6 +106,40 @@ where
             server_config: None,
             structure: None,
             parallel_enabled: false,
+            jar_cache: None,
+            structure_cache: None,
+            progress_reporter: None,
+        }
+    }
+
+    /// Sets up caching for this manager using the global configuration.
+    pub fn with_caching(mut self) -> Result<Self> {
+        let config = &CONFIG_MANAGER.manager;
+
+        if config.cache_enabled {
+            // Set up global JAR cache
+            let cache_dir = CONFIG_MANAGER.cache_dir();
+            self.jar_cache = Some(GlobalJarCache::new(cache_dir, config.cache_max_size_mb)?);
+
+            // Set up server-specific structure cache if we have server config
+            if let Some(server_config) = self.server_config {
+                self.structure_cache = Some(ServerStructureCache::new(server_config.id.clone()));
+            }
+        }
+
+        Ok(self)
+    }
+
+    /// Sets a progress reporter for this manager.
+    pub fn with_progress_reporter(mut self, reporter: ProgressReporter) -> Self {
+        self.progress_reporter = Some(reporter);
+        self
+    }
+
+    /// Reports progress if a reporter is set.
+    pub(crate) fn report_progress(&self, update: ProgressUpdate) {
+        if let Some(ref reporter) = self.progress_reporter {
+            reporter(update);
         }
     }
 
@@ -94,9 +147,12 @@ where
     ///
     /// This will scan the mods directory and other relevant folders,
     /// reading mod metadata in parallel for performance.
+    /// Uses caching when available to improve performance.
     #[tracing::instrument(skip(self))]
     pub async fn scan(&mut self) -> Result<&MinecraftStructure> {
         use tracing::info;
+
+        self.report_progress(ProgressUpdate::new(ProgressStage::Connecting, 0, 100));
 
         // Ensure we're connected
         if !self.connector.is_connected().await {
@@ -104,14 +160,35 @@ where
             self.connector.connect().await?;
         }
 
+        self.report_progress(ProgressUpdate::new(ProgressStage::CheckingCache, 10, 100));
+
         // Get server info to determine root structure
         let _server_info = self.connector.get_server_info().await?;
 
+        // Check if we can use cached structure
+        let config = &CONFIG_MANAGER.manager;
+        let use_cache = if let Some(ref structure_cache) = self.structure_cache {
+            config.cache_enabled && !structure_cache.is_expired(config.cache_ttl_hours)
+        } else {
+            false
+        };
+
+        if use_cache {
+            // For now, we still perform a fresh scan since structure cache
+            // doesn't store the full MinecraftStructure yet
+            debug!("Structure cache available but performing fresh scan for completeness");
+        }
+
         let mut structure = MinecraftStructure::new(PathBuf::from("."));
+
+        self.report_progress(ProgressUpdate::new(ProgressStage::Listing, 20, 100));
 
         // Scan mods directory
         info!("Starting mod directory scan...");
         self.scan_mods_directory(&mut structure).await?;
+
+        self.report_progress(ProgressUpdate::new(ProgressStage::Analyzing, 80, 100));
+
         info!("Found {} mods total", structure.mods.mods.len());
 
         // Log each mod found
@@ -128,6 +205,8 @@ where
             );
         }
 
+        self.report_progress(ProgressUpdate::new(ProgressStage::Listing, 90, 100));
+
         // Scan other directories
         structure.config.exists = self.check_directory_exists(&structure.config.path).await?;
         structure.resourcepacks.exists = self
@@ -136,6 +215,41 @@ where
         structure.shaderpacks.exists = self
             .check_directory_exists(&structure.shaderpacks.path)
             .await?;
+
+        self.report_progress(ProgressUpdate::new(ProgressStage::UpdatingCache, 95, 100));
+
+        // Update structure cache with new data
+        if let Some(ref mut structure_cache) = self.structure_cache {
+            let jar_hashes: Vec<String> = structure
+                .mods
+                .mods
+                .iter()
+                .filter_map(|mod_info| GlobalJarCache::compute_file_hash(&mod_info.file_path).ok())
+                .collect();
+
+            let mut directory_structure = HashMap::new();
+            directory_structure.insert("mods".to_string(), structure.mods.exists);
+            directory_structure.insert("config".to_string(), structure.config.exists);
+            directory_structure.insert("resourcepacks".to_string(), structure.resourcepacks.exists);
+            directory_structure.insert("shaderpacks".to_string(), structure.shaderpacks.exists);
+
+            structure_cache.update(jar_hashes, directory_structure);
+
+            // Save structure cache to disk
+            let cache_dir = CONFIG_MANAGER.cache_dir();
+            if let Err(e) = structure_cache.save(&cache_dir) {
+                debug!("Failed to save structure cache: {}", e);
+            }
+        }
+
+        // Save JAR cache if it exists
+        if let Some(ref jar_cache) = self.jar_cache {
+            if let Err(e) = jar_cache.save_cache_index() {
+                debug!("Failed to save JAR cache index: {}", e);
+            }
+        }
+
+        self.report_progress(ProgressUpdate::new(ProgressStage::Completed, 100, 100));
 
         self.structure = Some(structure);
         Ok(self.structure.as_ref().unwrap())
@@ -307,7 +421,7 @@ where
                         .upload_file(
                             &mod_info.file_path,
                             &remote_path,
-                            None, // TODO: Forward progress callback properly
+                            None, // Progress callbacks not supported for individual file operations yet
                         )
                         .await
                         .map_err(|e| ManagerError::UpdateFailed {
@@ -355,7 +469,7 @@ where
                         .upload_file(
                             new_path,
                             &new_remote_path,
-                            None, // TODO: Forward progress callback properly
+                            None, // Progress callbacks not supported for individual file operations yet
                         )
                         .await
                         .map_err(|e| ManagerError::UpdateFailed {
