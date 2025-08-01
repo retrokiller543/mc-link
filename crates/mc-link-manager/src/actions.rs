@@ -1,6 +1,6 @@
-use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 use mc_link_core::ModInfo;
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Represents an action needed to synchronize two Minecraft instances.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -18,7 +18,7 @@ pub enum SyncAction {
         /// Path to the new mod file
         new_path: PathBuf,
     },
-    
+
     /// Add a new mod that doesn't exist on the target
     AddMod {
         /// Mod information to add
@@ -26,7 +26,7 @@ pub enum SyncAction {
         /// Target location (Client or Server)
         target: SyncTarget,
     },
-    
+
     /// Remove a mod that shouldn't exist on the target
     RemoveMod {
         /// Mod identifier
@@ -36,7 +36,7 @@ pub enum SyncAction {
         /// Target location (Client or Server)
         target: SyncTarget,
     },
-    
+
     /// Keep mod as-is (no action needed)
     KeepAsIs {
         /// Mod identifier
@@ -96,7 +96,7 @@ impl SyncPlan {
             will_be_compatible: true,
         }
     }
-    
+
     /// Adds an action to the sync plan and updates the summary.
     pub fn add_action(&mut self, action: SyncAction) {
         match &action {
@@ -108,11 +108,11 @@ impl SyncPlan {
         self.summary.total_mods += 1;
         self.actions.push(action);
     }
-    
+
     /// Returns true if the sync plan has any actions to perform.
     pub fn has_changes(&self) -> bool {
-        self.summary.mods_to_update > 0 
-            || self.summary.mods_to_add > 0 
+        self.summary.mods_to_update > 0
+            || self.summary.mods_to_add > 0
             || self.summary.mods_to_remove > 0
     }
 }

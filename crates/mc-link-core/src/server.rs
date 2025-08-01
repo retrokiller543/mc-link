@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::future::Future;
-use serde::{Deserialize, Serialize};
 use crate::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::future::Future;
+use std::path::PathBuf;
 
 /// Ensures a connector is connected before performing operations.
 ///
@@ -10,7 +10,7 @@ use crate::Result;
 ///
 /// ```ignore
 /// use mc_link_core::ensure_connected;
-/// 
+///
 /// fn some_operation(connector: &impl ServerConnector) -> Result<()> {
 ///     ensure_connected!(connector);
 ///     // ... perform operation
@@ -128,16 +128,16 @@ pub type ProgressCallback = Box<dyn Fn(u64, u64) + Send + Sync>;
 pub trait ServerConnector: Send + Sync {
     /// Connect to the server with the given connection details
     fn connect(&mut self) -> impl Future<Output = Result<()>> + Send;
-    
+
     /// Disconnect from the server
     fn disconnect(&mut self) -> impl Future<Output = Result<()>> + Send;
-    
+
     /// Check if currently connected to the server
     fn is_connected(&self) -> impl Future<Output = bool> + Send;
-    
+
     /// Get server information (version, properties, mods, etc.)
     fn get_server_info(&self) -> impl Future<Output = Result<ServerInfo>> + Send;
-    
+
     /// Upload a file to the server
     fn upload_file(
         &self,
@@ -145,7 +145,7 @@ pub trait ServerConnector: Send + Sync {
         remote_path: &PathBuf,
         progress: Option<ProgressCallback>,
     ) -> impl Future<Output = Result<()>> + Send;
-    
+
     /// Download a file from the server
     fn download_file(
         &self,
@@ -153,16 +153,19 @@ pub trait ServerConnector: Send + Sync {
         local_path: &PathBuf,
         progress: Option<ProgressCallback>,
     ) -> impl Future<Output = Result<()>> + Send;
-    
+
     /// List files in a remote directory
-    fn list_files(&self, remote_path: &PathBuf) -> impl Future<Output = Result<Vec<PathBuf>>> + Send;
-    
+    fn list_files(
+        &self,
+        remote_path: &PathBuf,
+    ) -> impl Future<Output = Result<Vec<PathBuf>>> + Send;
+
     /// Delete a file on the server
     fn delete_file(&self, remote_path: &PathBuf) -> impl Future<Output = Result<()>> + Send;
-    
+
     /// Create a directory on the server
     fn create_directory(&self, remote_path: &PathBuf) -> impl Future<Output = Result<()>> + Send;
-    
+
     /// Execute a server command (if supported)
     fn execute_command(&self, command: &str) -> impl Future<Output = Result<String>> + Send;
 }

@@ -1,19 +1,21 @@
-use std::path::Path;
-use tosic_utils::logging::{FilterConfig, TracingSubscriberBuilder};
-use tracing_subscriber::fmt::format::FmtSpan;
-use tracing_subscriber::fmt::layer;
-use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::EnvFilter;
 use crate::Result;
 use chrono::Local;
 use mc_link_config::{LogFileNameFormat, ManagerConfig};
+use std::path::Path;
+use tosic_utils::logging::{FilterConfig, TracingSubscriberBuilder};
+use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling;
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::format::FmtSpan;
+use tracing_subscriber::fmt::layer;
 
 fn get_log_filename(format: &LogFileNameFormat) -> String {
     match format {
         LogFileNameFormat::Date => format!("mc-link-{}.log", Local::now().format("%Y-%m-%d")),
         LogFileNameFormat::Timestamp => format!("mc-link-{}.log", Local::now().timestamp()),
-        LogFileNameFormat::DateTime => format!("mc-link-{}.log", Local::now().format("%Y-%m-%d_%H-%M-%S")),
+        LogFileNameFormat::DateTime => {
+            format!("mc-link-{}.log", Local::now().format("%Y-%m-%d_%H-%M-%S"))
+        }
         LogFileNameFormat::None => "mc-link.log".to_string(),
     }
 }
@@ -78,39 +80,64 @@ fn tracing_env_filter() -> EnvFilter {
 /// // Keep `guards` alive for the duration of the application.
 /// ```
 pub fn tracing(log_dir: &Path, config: &ManagerConfig) -> Result<Vec<WorkerGuard>> {
-    let (stdout_writer, stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
     let file_appender = rolling::daily(log_dir, get_log_filename(&config.log_file));
     let (file_writer, file_guard) = tracing_appender::non_blocking(file_appender);
 
-    TracingSubscriberBuilder::new()
-        .with_filter(tracing_env_filter())
-        .with_layer(
-            layer()
-                .with_writer(stdout_writer)
-                .with_file(false)
-                .with_thread_names(true)
-                //.with_thread_ids(true)
-                .with_line_number(true)
-                .with_level(true)
-                .with_span_events(FmtSpan::CLOSE)
-                .compact(),
-        )
-        .with_layer(
-            layer()
-                .with_writer(file_writer)
-                .with_file(true)
-                .with_thread_names(true)
-                //.with_thread_ids(true)
-                .with_line_number(true)
-                .with_level(true)
-                .with_span_events(FmtSpan::CLOSE)
-                .compact(),
-        )
-        .init()
-        .map_err(Into::into)
-        .map(|mut guards| {
-            guards.push(stdout_guard);
-            guards.push(file_guard);
-            guards
-        })
+    let mut guards = vec![file_guard];
+
+    if config.log_to_stdout {
+        let (stdout_writer, stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
+        guards.push(stdout_guard);
+
+        TracingSubscriberBuilder::new()
+            .with_filter(tracing_env_filter())
+            .with_layer(
+                layer()
+                    .with_writer(stdout_writer)
+                    .with_file(false)
+                    .with_thread_names(true)
+                    //.with_thread_ids(true)
+                    .with_line_number(true)
+                    .with_level(true)
+                    .with_span_events(FmtSpan::CLOSE)
+                    .compact(),
+            )
+            .with_layer(
+                layer()
+                    .with_writer(file_writer)
+                    .with_file(true)
+                    .with_thread_names(true)
+                    //.with_thread_ids(true)
+                    .with_line_number(true)
+                    .with_level(true)
+                    .with_span_events(FmtSpan::CLOSE)
+                    .compact(),
+            )
+            .init()
+            .map_err(Into::into)
+            .map(|mut tracing_guards| {
+                tracing_guards.extend(guards);
+                tracing_guards
+            })
+    } else {
+        TracingSubscriberBuilder::new()
+            .with_filter(tracing_env_filter())
+            .with_layer(
+                layer()
+                    .with_writer(file_writer)
+                    .with_file(true)
+                    .with_thread_names(true)
+                    //.with_thread_ids(true)
+                    .with_line_number(true)
+                    .with_level(true)
+                    .with_span_events(FmtSpan::CLOSE)
+                    .compact(),
+            )
+            .init()
+            .map_err(Into::into)
+            .map(|mut tracing_guards| {
+                tracing_guards.extend(guards);
+                tracing_guards
+            })
+    }
 }

@@ -1,5 +1,5 @@
 //! Minecraft server management configuration system.
-//! 
+//!
 //! This module provides a unified configuration system for managing Minecraft servers,
 //! including server definitions, connection details, compatibility profiles, and
 //! extensible resource management for templates and profiles.
@@ -8,10 +8,10 @@
 
 pub mod error;
 pub mod macros;
-pub mod servers;
-pub mod profiles;
-pub mod prelude;
 pub mod manager;
+pub mod prelude;
+pub mod profiles;
+pub mod servers;
 
 use directories::ProjectDirs;
 use std::path::{Path, PathBuf};
@@ -19,28 +19,28 @@ use std::process::exit;
 use std::sync::LazyLock;
 
 pub use error::*;
-pub use servers::*;
+pub use manager::{LogFileNameFormat, ManagerConfig};
 pub use profiles::*;
-pub use manager::{ManagerConfig, LogFileNameFormat};
+pub use servers::*;
 
 /// Project directories for mc-link.
 pub static PROJECT_DIRS: LazyLock<ProjectDirs> = LazyLock::new(|| {
     if let Some(dirs) = ProjectDirs::from("com", "tosic", "mc-link") {
         dirs
     } else {
-        eprintln!("Failed to determine project directories. Ensure your environment supports directories.");
+        eprintln!(
+            "Failed to determine project directories. Ensure your environment supports directories."
+        );
         exit(1);
     }
 });
 
 /// Global configuration manager instance.
-pub static CONFIG_MANAGER: LazyLock<ConfigManager> = LazyLock::new(|| {
-    match ConfigManager::new() {
-        Ok(manager) => manager,
-        Err(e) => {
-            eprintln!("Failed to initialize configuration manager: {}", e);
-            exit(1);
-        }
+pub static CONFIG_MANAGER: LazyLock<ConfigManager> = LazyLock::new(|| match ConfigManager::new() {
+    Ok(manager) => manager,
+    Err(e) => {
+        eprintln!("Failed to initialize configuration manager: {}", e);
+        exit(1);
     }
 });
 
@@ -66,12 +66,13 @@ impl ConfigManager {
             .unwrap_or_else(|| PROJECT_DIRS.config_dir().to_path_buf());
 
         // Ensure the config directory exists
-        std::fs::create_dir_all(&config_dir)
-            .map_err(|e| ConfigError::io_error(
+        std::fs::create_dir_all(&config_dir).map_err(|e| {
+            ConfigError::io_error(
                 "create config directory",
                 format!("Failed to create config directory: {}", e),
-                Some(e)
-            ))?;
+                Some(e),
+            )
+        })?;
 
         let manager = ManagerConfig::load(&config_dir)?;
         // Load servers configuration
@@ -87,12 +88,12 @@ impl ConfigManager {
             config_dir,
         })
     }
-    
+
     /// Gets a reference to the manager configuration.
     pub fn manager(&self) -> &ManagerConfig {
         &self.manager
     }
-    
+
     /// Gets a mutable reference to the manager configuration.
     pub fn manager_mut(&mut self) -> &mut ManagerConfig {
         &mut self.manager
@@ -145,7 +146,9 @@ impl ConfigManager {
 
     /// Adds or updates a server configuration.
     pub fn add_server(&mut self, server: ServerConfig) {
-        self.servers_config.servers.insert(server.id.clone(), server);
+        self.servers_config
+            .servers
+            .insert(server.id.clone(), server);
     }
 
     /// Removes a server configuration.
@@ -155,7 +158,11 @@ impl ConfigManager {
 
     /// Lists all server IDs.
     pub fn list_servers(&self) -> Vec<&str> {
-        self.servers_config.servers.keys().map(|s| s.as_str()).collect()
+        self.servers_config
+            .servers
+            .keys()
+            .map(|s| s.as_str())
+            .collect()
     }
 }
 

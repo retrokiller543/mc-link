@@ -6,9 +6,9 @@
 #![cfg_attr(not(debug_assertions), forbid(missing_docs))]
 
 pub mod error;
+pub mod logging;
 pub mod prelude;
 pub mod server;
-pub mod logging;
 pub mod traits;
 
 pub use error::*;

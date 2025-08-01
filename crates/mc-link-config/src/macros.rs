@@ -1,7 +1,7 @@
 //! Configuration definition macros for reducing boilerplate.
 
 /// Macro for defining configuration structs with automatic trait implementations.
-/// 
+///
 /// This macro generates:
 /// - The struct definition with Serialize, Deserialize, Debug, Clone
 /// - Default implementation using provided default values
@@ -39,7 +39,7 @@ macro_rules! config_struct {
         impl From<$name> for config::Value {
             fn from(val: $name) -> Self {
                 use config::{ValueKind, Map};
-                
+
                 Self::new(
                     None,
                     ValueKind::Table(Map::from_iter(vec![
@@ -54,7 +54,7 @@ macro_rules! config_struct {
 }
 
 /// Macro for defining configuration enums with automatic trait implementations.
-/// 
+///
 /// This macro generates:
 /// - The enum definition with Debug, Clone, PartialEq, Eq, Serialize, Deserialize
 /// - Default implementation using the specified default variant
@@ -125,7 +125,7 @@ macro_rules! config_enum {
 }
 
 /// Helper macro for creating nested config accessors.
-/// 
+///
 /// This macro generates getter and mutable getter methods for nested configuration structs.
 #[macro_export]
 macro_rules! config_accessors {

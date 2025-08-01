@@ -3,23 +3,21 @@
 //! Import with `use mc_link_config::prelude::*;` to get commonly used config types.
 
 // Core types
-pub use crate::{ConfigManager, PROJECT_DIRS, CONFIG_MANAGER};
+pub use crate::{CONFIG_MANAGER, ConfigManager, PROJECT_DIRS};
 
 // Error handling
 pub use crate::error::{ConfigError, Result};
 
 // Server configuration
 pub use crate::servers::{
-    ConnectionType, ModLoader, ServerConfig, ServersConfig,
-    LocalConnection, FtpConnection, SshConnection,
-    ServerSettings, CompatibilityConfig, GlobalServerSettings,
+    CompatibilityConfig, ConnectionType, FtpConnection, GlobalServerSettings, LocalConnection,
+    ModLoader, ServerConfig, ServerSettings, ServersConfig, SshConnection,
 };
 
 // Profile management
 pub use crate::profiles::{
-    ProfileManager, CompatibilityProfile, CompatibilityRule,
-    ProfileType, RuleAction, ProfileIndex,
+    CompatibilityProfile, CompatibilityRule, ProfileIndex, ProfileManager, ProfileType, RuleAction,
 };
 
 // Configuration macros
-pub use crate::{config_struct, config_enum, config_accessors};
+pub use crate::{config_accessors, config_enum, config_struct};

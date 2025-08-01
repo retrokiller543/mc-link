@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
-use serde::{Deserialize, Serialize};
-use mc_link_core::{ModInfo, ModSide};
 use crate::Result;
+use mc_link_core::{ModInfo, ModSide};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 /// Configuration for mod compatibility checking.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,14 +85,14 @@ pub fn check_compatibility(
     server_mods: &[ModInfo],
     config: &CompatConfig,
 ) -> Result<CompatResult> {
-    use tracing::{info, debug};
-    
+    use tracing::{debug, info};
+
     info!(
         client_mod_count = client_mods.len(),
         server_mod_count = server_mods.len(),
         "Starting a detailed compatibility check"
     );
-    
+
     let mut result = CompatResult {
         missing_on_server: Vec::new(),
         missing_on_client: Vec::new(),
@@ -100,9 +100,10 @@ pub fn check_compatibility(
         ignored_mods: Vec::new(),
         is_compatible: true,
     };
-    
+
     // Create lookup maps for efficient comparison using the proper mod IDs
-    let client_map: HashMap<String, &ModInfo> = client_mods.iter()
+    let client_map: HashMap<String, &ModInfo> = client_mods
+        .iter()
         .map(|m| {
             debug!(
                 mod_id = %m.id,
@@ -113,8 +114,9 @@ pub fn check_compatibility(
             (m.id.clone(), m)
         })
         .collect();
-    
-    let server_map: HashMap<String, &ModInfo> = server_mods.iter()
+
+    let server_map: HashMap<String, &ModInfo> = server_mods
+        .iter()
         .map(|m| {
             debug!(
                 mod_id = %m.id,
@@ -125,23 +127,23 @@ pub fn check_compatibility(
             (m.id.clone(), m)
         })
         .collect();
-    
+
     info!(
         unique_client_ids = client_map.len(),
         unique_server_ids = server_map.len(),
         "Created mod ID mappings"
     );
-    
+
     // Check each client mod
     for client_mod in client_mods {
         let mod_id = &client_mod.id;
-        
+
         // Skip if in ignore list
         if config.ignore_list.contains(mod_id) {
             result.ignored_mods.push(mod_id.clone());
             continue;
         }
-        
+
         // Apply custom rules
         if let Some(rule) = config.custom_rules.iter().find(|r| r.mod_id == *mod_id) {
             match rule.rule_type {
@@ -163,7 +165,7 @@ pub fn check_compatibility(
                 }
             }
         }
-        
+
         // Auto-ignore based on mod side information
         match client_mod.side {
             ModSide::Client if config.auto_ignore_client_only => {
@@ -177,12 +179,14 @@ pub fn check_compatibility(
             }
             _ => {}
         }
-        
+
         // Check if mod exists on server
         if let Some(server_mod) = server_map.get(mod_id) {
             // Check version compatibility
             if client_mod.version != server_mod.version {
-                if let (Some(client_ver), Some(server_ver)) = (&client_mod.version, &server_mod.version) {
+                if let (Some(client_ver), Some(server_ver)) =
+                    (&client_mod.version, &server_mod.version)
+                {
                     result.version_mismatches.push(VersionMismatch {
                         mod_id: mod_id.clone(),
                         mod_name: client_mod.name.clone(),
@@ -197,16 +201,16 @@ pub fn check_compatibility(
             result.is_compatible = false;
         }
     }
-    
+
     // Check each server mod for client-missing mods
     for server_mod in server_mods {
         let mod_id = &server_mod.id;
-        
+
         // Skip if in ignore list or already processed
         if config.ignore_list.contains(mod_id) || client_map.contains_key(mod_id) {
             continue;
         }
-        
+
         // Apply custom rules
         if let Some(rule) = config.custom_rules.iter().find(|r| r.mod_id == *mod_id) {
             match rule.rule_type {
@@ -221,7 +225,7 @@ pub fn check_compatibility(
                 }
             }
         }
-        
+
         // Auto-ignore based on mod side information
         match server_mod.side {
             ModSide::Server if config.auto_ignore_server_only => continue,
@@ -232,11 +236,10 @@ pub fn check_compatibility(
             }
             _ => {}
         }
-        
+
         result.missing_on_client.push(server_mod.clone());
         result.is_compatible = false;
     }
-    
+
     Ok(result)
 }
-

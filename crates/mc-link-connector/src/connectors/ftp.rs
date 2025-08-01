@@ -1,3 +1,8 @@
+use mc_link_config::FtpConnection;
+use mc_link_core::traits::PathExt;
+use mc_link_core::{
+    CoreError, ProgressCallback, Result, ServerConnector, ServerInfo, ServerStatus,
+};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -6,9 +11,6 @@ use suppaftp::list::File;
 use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
 use tracing::debug;
-use mc_link_core::{CoreError, Result, ServerConnector, ServerInfo, ServerStatus, ProgressCallback};
-use mc_link_config::FtpConnection;
-use mc_link_core::traits::PathExt;
 
 /// FTP connector for managing Minecraft servers over FTP protocol.
 ///
@@ -77,7 +79,7 @@ impl ServerConnector for FtpConnector {
         let base_path = self.base_path.clone();
         let ftp_stream = self.ftp_stream.clone();
         let connected = self.connected.clone();
-        
+
         async move {
             // Connect to FTP server
             let mut ftp_stream_instance = AsyncFtpStream::connect(format!("{}:{}", host, port))
@@ -85,32 +87,35 @@ impl ServerConnector for FtpConnector {
                 .map_err(|e| CoreError::ConnectionFailed {
                     message: format!("Failed to connect to FTP server: {}", e),
                 })?;
-            
+
             // Login with credentials
-            ftp_stream_instance.login(&username, &password)
+            ftp_stream_instance
+                .login(&username, &password)
                 .await
                 .map_err(|e| CoreError::AuthenticationFailed {
                     reason: format!("FTP login failed: {}", e),
                 })?;
-            
+
             // Set binary mode for file transfers
-            ftp_stream_instance.transfer_type(suppaftp::types::FileType::Binary)
+            ftp_stream_instance
+                .transfer_type(suppaftp::types::FileType::Binary)
                 .await
                 .map_err(|e| CoreError::NetworkError {
                     message: format!("Failed to set binary mode: {}", e),
                 })?;
-            
+
             // Try to change to base directory to verify it exists
             let base_str = base_path.to_slash_lossy();
-            ftp_stream_instance.cwd(&base_str)
+            ftp_stream_instance
+                .cwd(&base_str)
                 .await
                 .map_err(|_e| CoreError::ServerNotFound {
                     server_id: base_str.to_string(),
                 })?;
-            
+
             *ftp_stream.lock().await = Some(ftp_stream_instance);
             *connected.lock().await = true;
-            
+
             Ok(())
         }
     }
@@ -127,14 +132,12 @@ impl ServerConnector for FtpConnector {
             Ok(())
         }
     }
-    
+
     fn is_connected(&self) -> impl std::future::Future<Output = bool> + Send {
         let connected = self.connected.clone();
-        async move {
-            *connected.lock().await
-        }
+        async move { *connected.lock().await }
     }
-    
+
     fn get_server_info(&self) -> impl std::future::Future<Output = Result<ServerInfo>> + Send {
         let connected = self.connected.clone();
         async move {
@@ -143,7 +146,7 @@ impl ServerConnector for FtpConnector {
                     message: "Not connected to FTP server".to_string(),
                 });
             }
-            
+
             // We need to work around the borrow checker here
             // In practice, you'd want to restructure this or use Arc<Mutex<>>
             // For now, create a simplified response
@@ -156,7 +159,7 @@ impl ServerConnector for FtpConnector {
             })
         }
     }
-    
+
     #[tracing::instrument(skip(self, progress), fields(local_path = %local_path.display(), remote_path = %remote_path.display()))]
     fn upload_file(
         &self,
@@ -168,36 +171,38 @@ impl ServerConnector for FtpConnector {
         let remote_path = remote_path.clone();
         let ftp_stream = self.ftp_stream.clone();
         let connected = self.connected.clone();
-        
+
         async move {
             if !*connected.lock().await {
                 return Err(CoreError::ConnectionFailed {
                     message: "Not connected to FTP server".to_string(),
                 });
             }
-            
+
             // Read local file
-            let mut file = tokio::fs::File::open(&local_path).await
-                .map_err(|e| CoreError::FileOperationFailed {
+            let mut file = tokio::fs::File::open(&local_path).await.map_err(|e| {
+                CoreError::FileOperationFailed {
                     operation: "open local file".to_string(),
                     reason: e.to_string(),
-                })?;
-            
+                }
+            })?;
+
             let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer).await
+            file.read_to_end(&mut buffer)
+                .await
                 .map_err(|e| CoreError::FileOperationFailed {
                     operation: "read local file".to_string(),
                     reason: e.to_string(),
                 })?;
-            
+
             let total_size = buffer.len() as u64;
-            
+
             // Upload file
             let mut ftp_stream = ftp_stream.lock().await;
             let stream = ftp_stream.as_mut().ok_or(CoreError::ConnectionFailed {
                 message: "FTP stream is not initialized".to_string(),
             })?;
-            
+
             // Create parent directories if needed
             if let Some(parent) = remote_path.parent() {
                 let parent_str = parent.to_slash_lossy();
@@ -205,23 +210,24 @@ impl ServerConnector for FtpConnector {
                     let _ = stream.mkdir(&parent_str).await;
                 }
             }
-            
+
             // Upload the file using put_file with a byte slice
             let mut buffer_slice = buffer.as_slice();
-            stream.put_file(&remote_path.to_slash_lossy(), &mut buffer_slice)
+            stream
+                .put_file(&remote_path.to_slash_lossy(), &mut buffer_slice)
                 .await
                 .map_err(|e| CoreError::NetworkError {
                     message: format!("Failed to upload file: {}", e),
                 })?;
-            
+
             if let Some(callback) = progress {
                 callback(total_size, total_size);
             }
-            
+
             Ok(())
         }
     }
-    
+
     #[tracing::instrument(skip(self, progress), fields(remote_path = %remote_path.display(), local_path = %local_path.display()))]
     fn download_file(
         &self,
@@ -233,23 +239,24 @@ impl ServerConnector for FtpConnector {
         let local_path = local_path.clone();
         let ftp_stream = self.ftp_stream.clone();
         let connected = self.connected.clone();
-        
+
         async move {
             if !*connected.lock().await {
                 return Err(CoreError::ConnectionFailed {
                     message: "Not connected to FTP server".to_string(),
                 });
             }
-            
+
             // Create parent directories for local file if needed
             if let Some(parent) = local_path.parent() {
-                tokio::fs::create_dir_all(parent).await
-                    .map_err(|e| CoreError::FileOperationFailed {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                    CoreError::FileOperationFailed {
                         operation: "create local directories".to_string(),
                         reason: e.to_string(),
-                    })?;
+                    }
+                })?;
             }
-            
+
             // Download file
             let mut ftp_stream = ftp_stream.lock().await;
             let stream = ftp_stream.as_mut().ok_or(CoreError::ConnectionFailed {
@@ -257,43 +264,48 @@ impl ServerConnector for FtpConnector {
             })?;
 
             // Use retr method with proper callback to download to a buffer
-            let buffer = stream.retr(&remote_path.to_slash_lossy(), |mut data_stream| {
-                Box::pin(async move {
-                    use futures_lite::io::AsyncReadExt;
-                    let mut buffer = Vec::new();
-                    match data_stream.read_to_end(&mut buffer).await {
-                        Ok(_) => Ok((buffer, data_stream)),
-                        Err(e) => Err(suppaftp::FtpError::ConnectionError(e))
-                    }
+            let buffer = stream
+                .retr(&remote_path.to_slash_lossy(), |mut data_stream| {
+                    Box::pin(async move {
+                        use futures_lite::io::AsyncReadExt;
+                        let mut buffer = Vec::new();
+                        match data_stream.read_to_end(&mut buffer).await {
+                            Ok(_) => Ok((buffer, data_stream)),
+                            Err(e) => Err(suppaftp::FtpError::ConnectionError(e)),
+                        }
+                    })
                 })
-            })
                 .await
                 .map_err(|e| CoreError::NetworkError {
                     message: format!("Failed to download file: {}", e),
                 })?;
-            
+
             let total_size = buffer.len() as u64;
-            
+
             // Write to local file
-            tokio::fs::write(&local_path, &buffer).await
-                .map_err(|e| CoreError::FileOperationFailed {
+            tokio::fs::write(&local_path, &buffer).await.map_err(|e| {
+                CoreError::FileOperationFailed {
                     operation: "write local file".to_string(),
                     reason: e.to_string(),
-                })?;
-            
+                }
+            })?;
+
             if let Some(callback) = progress {
                 callback(total_size, total_size);
             }
-            
+
             Ok(())
         }
     }
-    
-    fn list_files(&self, remote_path: &PathBuf) -> impl std::future::Future<Output = Result<Vec<PathBuf>>> + Send {
+
+    fn list_files(
+        &self,
+        remote_path: &PathBuf,
+    ) -> impl std::future::Future<Output = Result<Vec<PathBuf>>> + Send {
         let remote_path = remote_path.clone();
         let ftp_stream = self.ftp_stream.clone();
         let connected = self.connected.clone();
-        
+
         async move {
             if !*connected.lock().await {
                 return Err(CoreError::ConnectionFailed {
@@ -306,13 +318,15 @@ impl ServerConnector for FtpConnector {
                 message: "FTP stream is not initialized".to_string(),
             })?;
 
-            let entries = stream.list(Some(&remote_path.to_slash_lossy()))
+            let entries = stream
+                .list(Some(&remote_path.to_slash_lossy()))
                 .await
                 .map_err(|e| CoreError::NetworkError {
                     message: format!("Failed to list files: {}", e),
                 })?;
-            
-            let files: Vec<PathBuf> = entries.iter()
+
+            let files: Vec<PathBuf> = entries
+                .iter()
                 .filter_map(|entry| {
                     if let Ok(file) = File::try_from(entry.as_str()) {
                         if !file.is_directory() {
@@ -327,35 +341,40 @@ impl ServerConnector for FtpConnector {
                     }
                 })
                 .collect();
-            
+
             Ok(files)
         }
     }
-    
-    fn delete_file(&self, remote_path: &PathBuf) -> impl std::future::Future<Output = Result<()>> + Send {
+
+    fn delete_file(
+        &self,
+        remote_path: &PathBuf,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
         let remote_path = remote_path.clone();
         let ftp_stream = self.ftp_stream.clone();
         let connected = self.connected.clone();
-        
+
         async move {
             if !*connected.lock().await {
                 return Err(CoreError::ConnectionFailed {
                     message: "Not connected to FTP server".to_string(),
                 });
             }
-            
+
             let mut ftp_stream = ftp_stream.lock().await;
             let stream = ftp_stream.as_mut().ok_or(CoreError::ConnectionFailed {
                 message: "FTP stream is not initialized".to_string(),
             })?;
-            
+
             // Try to delete as file first, then as directory
             let path_str = remote_path.to_slash_lossy();
             match stream.rm(&path_str).await {
                 Ok(_) => Ok(()),
                 Err(_) => {
                     // Try as directory
-                    stream.rmdir(&path_str).await
+                    stream
+                        .rmdir(&path_str)
+                        .await
                         .map_err(|e| CoreError::FileOperationFailed {
                             operation: "delete file/directory".to_string(),
                             reason: format!("Failed to delete: {}", e),
@@ -364,36 +383,44 @@ impl ServerConnector for FtpConnector {
             }
         }
     }
-    
-    fn create_directory(&self, remote_path: &PathBuf) -> impl std::future::Future<Output = Result<()>> + Send {
+
+    fn create_directory(
+        &self,
+        remote_path: &PathBuf,
+    ) -> impl std::future::Future<Output = Result<()>> + Send {
         let remote_path = remote_path.clone();
         let ftp_stream = self.ftp_stream.clone();
         let connected = self.connected.clone();
-        
+
         async move {
             if !*connected.lock().await {
                 return Err(CoreError::ConnectionFailed {
                     message: "Not connected to FTP server".to_string(),
                 });
             }
-            
+
             let mut ftp_stream = ftp_stream.lock().await;
             let stream = ftp_stream.as_mut().ok_or(CoreError::ConnectionFailed {
                 message: "FTP stream is not initialized".to_string(),
             })?;
-            
+
             let path_str = remote_path.to_slash_lossy();
-            stream.mkdir(&path_str).await
+            stream
+                .mkdir(&path_str)
+                .await
                 .map_err(|e| CoreError::FileOperationFailed {
                     operation: "create directory".to_string(),
                     reason: format!("Failed to create directory: {}", e),
                 })?;
-            
+
             Ok(())
         }
     }
-    
-    fn execute_command(&self, _command: &str) -> impl std::future::Future<Output = Result<String>> + Send {
+
+    fn execute_command(
+        &self,
+        _command: &str,
+    ) -> impl std::future::Future<Output = Result<String>> + Send {
         async move {
             Err(CoreError::ServerOperationFailed {
                 operation: "execute command".to_string(),

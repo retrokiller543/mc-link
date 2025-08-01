@@ -1,7 +1,7 @@
+use mc_link_core::ModInfo;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
-use mc_link_core::ModInfo;
 
 /// Represents the standard Minecraft server/client directory structure.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,12 +92,12 @@ impl MinecraftStructure {
             root_path,
         }
     }
-    
+
     /// Returns the total number of mods installed.
     pub fn mod_count(&self) -> usize {
         self.mods.mods.len()
     }
-    
+
     /// Checks if the mods directory exists and has mods.
     pub fn has_mods(&self) -> bool {
         self.mods.exists && !self.mods.mods.is_empty()

@@ -1,9 +1,9 @@
 //! Compatibility profiles and resource management for Minecraft servers.
 
+use crate::error::{ConfigError, Result};
+use crate::{config_enum, config_struct};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use crate::error::{ConfigError, Result};
-use crate::{config_struct, config_enum};
 
 config_enum! {
     /// Type of compatibility profile.
@@ -92,50 +92,53 @@ impl ProfileManager {
     /// Creates a new profile manager.
     pub fn new(config_dir: &Path) -> Result<Self> {
         let profiles_dir = config_dir.join("profiles");
-        
+
         // Create profiles directory if it doesn't exist
-        std::fs::create_dir_all(&profiles_dir)
-            .map_err(|e| ConfigError::io_error(
+        std::fs::create_dir_all(&profiles_dir).map_err(|e| {
+            ConfigError::io_error(
                 "create profiles directory",
                 format!("Failed to create profiles directory: {}", e),
                 Some(e),
-            ))?;
-        
+            )
+        })?;
+
         // Load or create index
         let index = Self::load_index(&profiles_dir)?;
-        
+
         let mut manager = Self {
             profiles_dir,
             index,
         };
-        
+
         // Install default profiles if none exist
         manager.install_default_profiles()?;
-        
+
         // Scan for profiles on initialization
         manager.scan_and_update()?;
-        
+
         Ok(manager)
     }
 
     /// Loads profile index from disk.
     fn load_index(profiles_dir: &Path) -> Result<ProfileIndex> {
         let index_file = profiles_dir.join("index.json");
-        
+
         if index_file.exists() {
-            let content = std::fs::read_to_string(&index_file)
-                .map_err(|e| ConfigError::io_error(
+            let content = std::fs::read_to_string(&index_file).map_err(|e| {
+                ConfigError::io_error(
                     "read profile index",
                     format!("Failed to read profile index: {}", e),
                     Some(e),
-                ))?;
-            
-            serde_json::from_str(&content)
-                .map_err(|e| ConfigError::serialization_error(
+                )
+            })?;
+
+            serde_json::from_str(&content).map_err(|e| {
+                ConfigError::serialization_error(
                     "JSON",
                     format!("Failed to parse profile index: {}", e),
                     Some(Box::new(e)),
-                ))
+                )
+            })
         } else {
             // Create default index
             let default_index = ProfileIndex::default();
@@ -147,21 +150,23 @@ impl ProfileManager {
     /// Saves profile index to disk.
     fn save_index(index: &ProfileIndex, profiles_dir: &Path) -> Result<()> {
         let index_file = profiles_dir.join("index.json");
-        
-        let content = serde_json::to_string_pretty(index)
-            .map_err(|e| ConfigError::serialization_error(
+
+        let content = serde_json::to_string_pretty(index).map_err(|e| {
+            ConfigError::serialization_error(
                 "JSON",
                 format!("Failed to serialize profile index: {}", e),
                 Some(Box::new(e)),
-            ))?;
-        
-        std::fs::write(&index_file, content)
-            .map_err(|e| ConfigError::io_error(
+            )
+        })?;
+
+        std::fs::write(&index_file, content).map_err(|e| {
+            ConfigError::io_error(
                 "write profile index",
                 format!("Failed to write profile index: {}", e),
                 Some(e),
-            ))?;
-        
+            )
+        })?;
+
         Ok(())
     }
 
@@ -177,7 +182,8 @@ impl ProfileManager {
 
     /// Gets profiles by tag.
     pub fn get_profiles_by_tag(&self, tag: &str) -> Vec<&CompatibilityProfile> {
-        self.index.profiles
+        self.index
+            .profiles
             .values()
             .filter(|profile| profile.tags.contains(&tag.to_string()))
             .collect()
@@ -191,39 +197,42 @@ impl ProfileManager {
             profile.created_at = Some(now.clone());
         }
         profile.last_modified = Some(now.clone());
-        
+
         // Save profile to file
         let profile_file = self.profiles_dir.join(format!("{}.json", profile.name));
-        let content = serde_json::to_string_pretty(&profile)
-            .map_err(|e| ConfigError::serialization_error(
+        let content = serde_json::to_string_pretty(&profile).map_err(|e| {
+            ConfigError::serialization_error(
                 "JSON",
                 format!("Failed to serialize profile: {}", e),
                 Some(Box::new(e)),
-            ))?;
-        
-        std::fs::write(&profile_file, content)
-            .map_err(|e| ConfigError::io_error(
+            )
+        })?;
+
+        std::fs::write(&profile_file, content).map_err(|e| {
+            ConfigError::io_error(
                 "write profile",
                 format!("Failed to write profile file: {}", e),
                 Some(e),
-            ))?;
-        
+            )
+        })?;
+
         // Update index
         self.index.profiles.insert(profile.name.clone(), profile);
         self.index.last_updated = Some(now);
         self.save()?;
-        
+
         Ok(())
     }
 
     /// Removes a profile.
     pub fn remove_profile(&mut self, name: &str) -> Result<()> {
-        let profile = self.get_profile(name)
+        let profile = self
+            .get_profile(name)
             .ok_or_else(|| ConfigError::ProfileNotFound {
                 profile_name: name.to_string(),
                 cause: None,
             })?;
-        
+
         // Don't allow removal of system profiles
         if profile.system {
             return Err(ConfigError::invalid_config(
@@ -232,23 +241,24 @@ impl ProfileManager {
                 None,
             ));
         }
-        
+
         // Remove file
         let profile_file = self.profiles_dir.join(format!("{}.json", name));
         if profile_file.exists() {
-            std::fs::remove_file(&profile_file)
-                .map_err(|e| ConfigError::io_error(
+            std::fs::remove_file(&profile_file).map_err(|e| {
+                ConfigError::io_error(
                     "remove profile file",
                     format!("Failed to remove profile file: {}", e),
                     Some(e),
-                ))?;
+                )
+            })?;
         }
-        
+
         // Remove from index
         self.index.profiles.remove(name);
         self.index.last_updated = Some(chrono::Utc::now().to_rfc3339());
         self.save()?;
-        
+
         Ok(())
     }
 
@@ -261,20 +271,21 @@ impl ProfileManager {
 
     /// Scans for profile files and updates index.
     fn scan_profiles(&mut self) -> Result<()> {
-        for entry in std::fs::read_dir(&self.profiles_dir)
-            .map_err(|e| ConfigError::io_error(
+        for entry in std::fs::read_dir(&self.profiles_dir).map_err(|e| {
+            ConfigError::io_error(
                 "read profiles directory",
                 format!("Failed to read profiles directory: {}", e),
                 Some(e),
-            ))?
-        {
-            let entry = entry
-                .map_err(|e| ConfigError::io_error(
+            )
+        })? {
+            let entry = entry.map_err(|e| {
+                ConfigError::io_error(
                     "read directory entry",
                     format!("Failed to read directory entry: {}", e),
                     Some(e),
-                ))?;
-            
+                )
+            })?;
+
             let path = entry.path();
             if path.is_file() && path.extension().map_or(false, |ext| ext == "json") {
                 if path.file_name().map_or(true, |name| name != "index.json") {
@@ -282,29 +293,31 @@ impl ProfileManager {
                 }
             }
         }
-        
+
         Ok(())
     }
 
     /// Processes a discovered profile file.
     fn process_profile_file(&mut self, profile_path: &Path) -> Result<()> {
-        let content = std::fs::read_to_string(profile_path)
-            .map_err(|e| ConfigError::io_error(
+        let content = std::fs::read_to_string(profile_path).map_err(|e| {
+            ConfigError::io_error(
                 "read profile file",
                 format!("Failed to read profile file: {}", e),
                 Some(e),
-            ))?;
+            )
+        })?;
 
-        let profile: CompatibilityProfile = serde_json::from_str(&content)
-            .map_err(|e| ConfigError::serialization_error(
+        let profile: CompatibilityProfile = serde_json::from_str(&content).map_err(|e| {
+            ConfigError::serialization_error(
                 "JSON",
                 format!("Failed to parse profile file: {}", e),
                 Some(Box::new(e)),
-            ))?;
+            )
+        })?;
 
         // Update index if not already present or if file is newer
         self.index.profiles.insert(profile.name.clone(), profile);
-        
+
         Ok(())
     }
 
@@ -355,7 +368,7 @@ impl ProfileManager {
         };
 
         self.add_profile(default_profile)?;
-        
+
         Ok(())
     }
 

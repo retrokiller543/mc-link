@@ -1,10 +1,10 @@
 pub mod ftp;
 pub mod local;
 
-use std::path::PathBuf;
 pub use ftp::*;
 pub use local::*;
 use mc_link_core::{ProgressCallback, ServerConnector, ServerInfo};
+use std::path::PathBuf;
 
 pub enum Connector {
     Local(LocalConnector),
@@ -33,7 +33,7 @@ impl From<FtpConnector> for Connector {
 }
 
 impl ServerConnector for Connector {
-    fn connect(&mut self) -> impl Future<Output=mc_link_core::Result<()>> + Send {
+    fn connect(&mut self) -> impl Future<Output = mc_link_core::Result<()>> + Send {
         async move {
             match self {
                 Connector::Local(connector) => connector.connect().await,
@@ -42,7 +42,7 @@ impl ServerConnector for Connector {
         }
     }
 
-    fn disconnect(&mut self) -> impl Future<Output=mc_link_core::Result<()>> + Send {
+    fn disconnect(&mut self) -> impl Future<Output = mc_link_core::Result<()>> + Send {
         async move {
             match self {
                 Connector::Local(connector) => connector.disconnect().await,
@@ -52,16 +52,15 @@ impl ServerConnector for Connector {
     }
 
     fn is_connected(&self) -> impl Future<Output = bool> + Send {
-       async move {
-           match self {
-               Connector::Local(connector) => connector.is_connected().await,
-               Connector::Ftp(connector) => connector.is_connected().await,
-           }
-       }
+        async move {
+            match self {
+                Connector::Local(connector) => connector.is_connected().await,
+                Connector::Ftp(connector) => connector.is_connected().await,
+            }
+        }
     }
 
-
-    fn get_server_info(&self) -> impl Future<Output=mc_link_core::Result<ServerInfo>> + Send {
+    fn get_server_info(&self) -> impl Future<Output = mc_link_core::Result<ServerInfo>> + Send {
         async move {
             match self {
                 Connector::Local(connector) => connector.get_server_info().await,
@@ -70,25 +69,54 @@ impl ServerConnector for Connector {
         }
     }
 
-    fn upload_file(&self, local_path: &PathBuf, remote_path: &PathBuf, progress: Option<ProgressCallback>) -> impl Future<Output=mc_link_core::Result<()>> + Send {
+    fn upload_file(
+        &self,
+        local_path: &PathBuf,
+        remote_path: &PathBuf,
+        progress: Option<ProgressCallback>,
+    ) -> impl Future<Output = mc_link_core::Result<()>> + Send {
         async move {
             match self {
-                Connector::Local(connector) => connector.upload_file(local_path, remote_path, progress).await,
-                Connector::Ftp(connector) => connector.upload_file(local_path, remote_path, progress).await,
+                Connector::Local(connector) => {
+                    connector
+                        .upload_file(local_path, remote_path, progress)
+                        .await
+                }
+                Connector::Ftp(connector) => {
+                    connector
+                        .upload_file(local_path, remote_path, progress)
+                        .await
+                }
             }
         }
     }
 
-    fn download_file(&self, remote_path: &PathBuf, local_path: &PathBuf, progress: Option<ProgressCallback>) -> impl Future<Output=mc_link_core::Result<()>> + Send {
+    fn download_file(
+        &self,
+        remote_path: &PathBuf,
+        local_path: &PathBuf,
+        progress: Option<ProgressCallback>,
+    ) -> impl Future<Output = mc_link_core::Result<()>> + Send {
         async move {
             match self {
-                Connector::Local(connector) => connector.download_file(remote_path, local_path, progress).await,
-                Connector::Ftp(connector) => connector.download_file(remote_path, local_path, progress).await,
+                Connector::Local(connector) => {
+                    connector
+                        .download_file(remote_path, local_path, progress)
+                        .await
+                }
+                Connector::Ftp(connector) => {
+                    connector
+                        .download_file(remote_path, local_path, progress)
+                        .await
+                }
             }
         }
     }
 
-    fn list_files(&self, remote_path: &PathBuf) -> impl Future<Output=mc_link_core::Result<Vec<PathBuf>>> + Send {
+    fn list_files(
+        &self,
+        remote_path: &PathBuf,
+    ) -> impl Future<Output = mc_link_core::Result<Vec<PathBuf>>> + Send {
         async move {
             match self {
                 Connector::Local(connector) => connector.list_files(remote_path).await,
@@ -97,7 +125,10 @@ impl ServerConnector for Connector {
         }
     }
 
-    fn delete_file(&self, remote_path: &PathBuf) -> impl Future<Output=mc_link_core::Result<()>> + Send {
+    fn delete_file(
+        &self,
+        remote_path: &PathBuf,
+    ) -> impl Future<Output = mc_link_core::Result<()>> + Send {
         async move {
             match self {
                 Connector::Local(connector) => connector.delete_file(remote_path).await,
@@ -106,7 +137,10 @@ impl ServerConnector for Connector {
         }
     }
 
-    fn create_directory(&self, remote_path: &PathBuf) -> impl Future<Output=mc_link_core::Result<()>> + Send {
+    fn create_directory(
+        &self,
+        remote_path: &PathBuf,
+    ) -> impl Future<Output = mc_link_core::Result<()>> + Send {
         async move {
             match self {
                 Connector::Local(connector) => connector.create_directory(remote_path).await,
@@ -115,7 +149,10 @@ impl ServerConnector for Connector {
         }
     }
 
-    fn execute_command(&self, command: &str) -> impl Future<Output=mc_link_core::Result<String>> + Send {
+    fn execute_command(
+        &self,
+        command: &str,
+    ) -> impl Future<Output = mc_link_core::Result<String>> + Send {
         async move {
             match self {
                 Connector::Local(connector) => connector.execute_command(command).await,

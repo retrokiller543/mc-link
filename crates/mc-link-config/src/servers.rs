@@ -1,9 +1,9 @@
 //! Server configuration definitions and management.
 
+use crate::error::{ConfigError, Result};
+use crate::{config_accessors, config_enum, config_struct};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use crate::error::{ConfigError, Result};
-use crate::{config_struct, config_enum, config_accessors};
 
 config_enum! {
     /// Supported mod loader types for Minecraft servers.
@@ -37,20 +37,23 @@ pub enum ConnectionType {
 
 impl From<ConnectionType> for config::Value {
     fn from(val: ConnectionType) -> Self {
-        use config::{Value, ValueKind, Map};
+        use config::{Map, Value, ValueKind};
         use std::collections::HashMap;
-        
+
         let (type_name, config_value) = match val {
             ConnectionType::Local(config) => ("local", config.into()),
             ConnectionType::Ftp(config) => ("ftp", config.into()),
             ConnectionType::Ssh(config) => ("ssh", config.into()),
             ConnectionType::Sftp(config) => ("sftp", config.into()),
         };
-        
+
         let mut map = HashMap::new();
-        map.insert("type".to_string(), Value::new(None, ValueKind::String(type_name.to_string())));
+        map.insert(
+            "type".to_string(),
+            Value::new(None, ValueKind::String(type_name.to_string())),
+        );
         map.insert("config".to_string(), config_value);
-        
+
         Value::new(None, ValueKind::Table(Map::from_iter(map)))
     }
 }
@@ -71,17 +74,17 @@ impl ConnectionType {
             ConnectionType::Sftp(_) => "SFTP",
         }
     }
-    
+
     /// Returns true if this is a local connection.
     pub fn is_local(&self) -> bool {
         matches!(self, ConnectionType::Local(_))
     }
-    
+
     /// Returns true if this is a remote connection.
     pub fn is_remote(&self) -> bool {
         !self.is_local()
     }
-    
+
     /// Gets the host for remote connections.
     pub fn get_host(&self) -> Option<&str> {
         match self {
@@ -90,7 +93,7 @@ impl ConnectionType {
             ConnectionType::Ssh(ssh) | ConnectionType::Sftp(ssh) => Some(&ssh.host),
         }
     }
-    
+
     /// Gets the username for connections that require authentication.
     pub fn get_username(&self) -> Option<&str> {
         match self {
@@ -250,7 +253,7 @@ impl ServerConfig {
             ..Default::default()
         }
     }
-    
+
     /// Validates the server configuration.
     pub fn validate(&self) -> Result<()> {
         if self.id.is_empty() {
@@ -260,7 +263,7 @@ impl ServerConfig {
                 None,
             ));
         }
-        
+
         if self.name.is_empty() {
             return Err(ConfigError::invalid_config(
                 "name",
@@ -268,7 +271,7 @@ impl ServerConfig {
                 None,
             ));
         }
-        
+
         // Validate connection configuration
         match &self.connection {
             ConnectionType::Local(local) => {
@@ -320,10 +323,10 @@ impl ServerConfig {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Gets the connection details as a PathBuf for local connections.
     pub fn get_local_path(&self) -> Option<PathBuf> {
         match &self.connection {
@@ -337,21 +340,23 @@ impl ServersConfig {
     /// Loads configuration from directory.
     pub fn load(config_dir: &Path) -> Result<Self> {
         let config_file = config_dir.join("servers.toml");
-        
+
         if config_file.exists() {
-            let content = std::fs::read_to_string(&config_file)
-                .map_err(|e| ConfigError::io_error(
+            let content = std::fs::read_to_string(&config_file).map_err(|e| {
+                ConfigError::io_error(
                     "read servers config",
                     format!("Failed to read servers.toml: {}", e),
                     Some(e),
-                ))?;
-            
-            toml::from_str(&content)
-                .map_err(|e| ConfigError::serialization_error(
+                )
+            })?;
+
+            toml::from_str(&content).map_err(|e| {
+                ConfigError::serialization_error(
                     "TOML",
                     format!("Failed to parse servers.toml: {}", e),
                     Some(Box::new(e)),
-                ))
+                )
+            })
         } else {
             // Create default config file
             let default_config = Self::default();
@@ -363,24 +368,26 @@ impl ServersConfig {
     /// Saves configuration to directory.
     pub fn save(&self, config_dir: &Path) -> Result<()> {
         let config_file = config_dir.join("servers.toml");
-        
-        let content = toml::to_string_pretty(self)
-            .map_err(|e| ConfigError::serialization_error(
+
+        let content = toml::to_string_pretty(self).map_err(|e| {
+            ConfigError::serialization_error(
                 "TOML",
                 format!("Failed to serialize servers config: {}", e),
                 Some(Box::new(e)),
-            ))?;
-        
-        std::fs::write(&config_file, content)
-            .map_err(|e| ConfigError::io_error(
+            )
+        })?;
+
+        std::fs::write(&config_file, content).map_err(|e| {
+            ConfigError::io_error(
                 "write servers config",
                 format!("Failed to write servers.toml: {}", e),
                 Some(e),
-            ))?;
-        
+            )
+        })?;
+
         Ok(())
     }
-    
+
     /// Validates all server configurations.
     pub fn validate(&self) -> Result<()> {
         for (id, server) in &self.servers {

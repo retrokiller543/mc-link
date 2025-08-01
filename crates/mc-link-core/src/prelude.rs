@@ -4,6 +4,4 @@
 //! allowing users to quickly import everything they need with `use mc_link_core::prelude::*;`.
 
 pub use crate::error::{CoreError, Result};
-pub use crate::server::{
-    ModInfo, ProgressCallback, ServerConnector, ServerInfo, ServerStatus,
-};
+pub use crate::server::{ModInfo, ProgressCallback, ServerConnector, ServerInfo, ServerStatus};

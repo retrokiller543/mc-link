@@ -1,12 +1,11 @@
+use crate::{CompatError, Result};
+use mc_link_core::{ModInfo, ModLoader, ModSide};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
-use serde::{Deserialize, Serialize};
 use tracing::{debug, trace};
 use zip::ZipArchive;
-use mc_link_core::{ModInfo, ModSide, ModLoader};
-use crate::{CompatError, Result};
-
 
 /// Fabric mod metadata from fabric.mod.json.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -72,7 +71,11 @@ pub fn extract_jar_info<P: AsRef<Path>>(jar_path: P) -> Result<ModInfo> {
     for i in 0..archive.len() {
         if let Ok(file_in_jar) = archive.by_index(i) {
             let name = file_in_jar.name();
-            if name.contains("META-INF") || name.ends_with(".toml") || name.ends_with(".json") || name.contains("mcmod") {
+            if name.contains("META-INF")
+                || name.ends_with(".toml")
+                || name.ends_with(".json")
+                || name.contains("mcmod")
+            {
                 trace!(file_name = name, "Found metadata file");
                 metadata_files.push(name.to_string());
             }
@@ -100,7 +103,10 @@ pub fn extract_jar_info<P: AsRef<Path>>(jar_path: P) -> Result<ModInfo> {
         return Ok(manifest_info);
     }
 
-    let filename = jar_path.file_stem().and_then(|s| s.to_str()).unwrap_or("unknown");
+    let filename = jar_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown");
     warn!(jar_path = %jar_path.display(), filename = %filename, "Could not extract mod metadata, falling back to filename");
 
     Ok(ModInfo {
@@ -115,7 +121,10 @@ pub fn extract_jar_info<P: AsRef<Path>>(jar_path: P) -> Result<ModInfo> {
     })
 }
 
-fn extract_mods_toml_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Path) -> Result<ModInfo> {
+fn extract_mods_toml_info(
+    archive: &mut ZipArchive<std::fs::File>,
+    jar_path: &Path,
+) -> Result<ModInfo> {
     use tracing::{debug, warn};
 
     let contents = {
@@ -136,7 +145,10 @@ fn extract_mods_toml_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Pa
     };
 
     debug!("Found mods.toml with {} bytes of content", contents.len());
-    debug!("mods.toml content preview: {}", &contents[..contents.len().min(200)]);
+    debug!(
+        "mods.toml content preview: {}",
+        &contents[..contents.len().min(200)]
+    );
 
     let manifest_version = read_manifest_version(archive);
 
@@ -152,10 +164,15 @@ fn extract_mods_toml_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Pa
         }
     };
 
-    let forge_mod = forge_toml.mods.into_iter().next().ok_or_else(|| CompatError::MetadataError {
-        mod_name: "unknown".to_string(),
-        reason: "No mods found in mods.toml".to_string(),
-    })?;
+    let forge_mod =
+        forge_toml
+            .mods
+            .into_iter()
+            .next()
+            .ok_or_else(|| CompatError::MetadataError {
+                mod_name: "unknown".to_string(),
+                reason: "No mods found in mods.toml".to_string(),
+            })?;
 
     let version = if forge_mod.version.trim() == "${file.jarVersion}" {
         manifest_version.unwrap_or_else(|| "unknown".to_string())
@@ -198,21 +215,24 @@ fn read_manifest_version(archive: &mut ZipArchive<std::fs::File>) -> Option<Stri
     None
 }
 
-fn extract_fabric_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Path) -> Result<ModInfo> {
+fn extract_fabric_info(
+    archive: &mut ZipArchive<std::fs::File>,
+    jar_path: &Path,
+) -> Result<ModInfo> {
     let mut file = archive.by_name("fabric.mod.json")?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-    
+
     let fabric_info: FabricModInfo = serde_json::from_str(&contents)?;
     let raw: serde_json::Value = serde_json::from_str(&contents)?;
-    
+
     let side = match fabric_info.environment.as_deref() {
         Some("client") => ModSide::Client,
         Some("server") => ModSide::Server,
         Some("*") | None => ModSide::Both,
         _ => ModSide::Unknown,
     };
-    
+
     Ok(ModInfo {
         id: fabric_info.id.clone(),
         name: fabric_info.name.unwrap_or(fabric_info.id),
@@ -231,12 +251,12 @@ fn extract_fabric_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Path)
 
 fn extract_mcmod_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Path) -> Result<ModInfo> {
     use tracing::debug;
-    
+
     // mcmod.info can be in root or META-INF
     let possible_paths = ["mcmod.info", "META-INF/mcmod.info"];
-    
+
     let mut used_path = "";
-    
+
     // Find which path exists
     for path in &possible_paths {
         if archive.by_name(path).is_ok() {
@@ -244,46 +264,54 @@ fn extract_mcmod_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Path) 
             break;
         }
     }
-    
+
     if used_path.is_empty() {
         return Err(CompatError::MetadataError {
             mod_name: "unknown".to_string(),
             reason: "No mcmod.info file found".to_string(),
         });
     }
-    
+
     // Now extract from the found path
     let mut file = archive.by_name(used_path)?;
-    
+
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-    
-    debug!("Found mcmod.info at {} with {} bytes", used_path, contents.len());
-    debug!("mcmod.info content preview: {}", &contents[..contents.len().min(200)]);
-    
+
+    debug!(
+        "Found mcmod.info at {} with {} bytes",
+        used_path,
+        contents.len()
+    );
+    debug!(
+        "mcmod.info content preview: {}",
+        &contents[..contents.len().min(200)]
+    );
+
     // mcmod.info can be either a single object or an array
     let mcmod_info: McModInfo = if contents.trim_start().starts_with('[') {
         // Array format - take the first mod
-        let mcmod_array: Vec<McModInfo> = serde_json::from_str(&contents)
-            .map_err(|e| CompatError::MetadataError {
+        let mcmod_array: Vec<McModInfo> =
+            serde_json::from_str(&contents).map_err(|e| CompatError::MetadataError {
                 mod_name: "unknown".to_string(),
                 reason: format!("Failed to parse mcmod.info array: {}", e),
             })?;
-        
-        mcmod_array.into_iter().next()
+
+        mcmod_array
+            .into_iter()
+            .next()
             .ok_or_else(|| CompatError::MetadataError {
                 mod_name: "unknown".to_string(),
                 reason: "Empty mcmod.info array".to_string(),
             })?
     } else {
         // Single object format
-        serde_json::from_str(&contents)
-            .map_err(|e| CompatError::MetadataError {
-                mod_name: "unknown".to_string(),
-                reason: format!("Failed to parse mcmod.info object: {}", e),
-            })?
+        serde_json::from_str(&contents).map_err(|e| CompatError::MetadataError {
+            mod_name: "unknown".to_string(),
+            reason: format!("Failed to parse mcmod.info object: {}", e),
+        })?
     };
-    
+
     Ok(ModInfo {
         id: mcmod_info.mod_id.clone(),
         name: mcmod_info.name.unwrap_or(mcmod_info.mod_id.clone()),
@@ -296,16 +324,22 @@ fn extract_mcmod_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Path) 
     })
 }
 
-fn extract_manifest_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Path) -> Result<ModInfo> {
+fn extract_manifest_info(
+    archive: &mut ZipArchive<std::fs::File>,
+    jar_path: &Path,
+) -> Result<ModInfo> {
     use tracing::debug;
-    
+
     let mut file = archive.by_name("META-INF/MANIFEST.MF")?;
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
-    
+
     debug!("Found MANIFEST.MF with {} bytes", contents.len());
-    debug!("MANIFEST.MF content preview: {}", &contents[..contents.len().min(300)]);
-    
+    debug!(
+        "MANIFEST.MF content preview: {}",
+        &contents[..contents.len().min(300)]
+    );
+
     // Parse manifest - simple key-value pairs separated by :
     let mut manifest_map = HashMap::new();
     for line in contents.lines() {
@@ -318,7 +352,7 @@ fn extract_manifest_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Pat
             manifest_map.insert(key.to_lowercase(), value.to_string());
         }
     }
-    
+
     // Look for common manifest attributes that might contain mod info
     let implementation_title = manifest_map.get("implementation-title");
     let implementation_version = manifest_map.get("implementation-version");
@@ -326,25 +360,23 @@ fn extract_manifest_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Pat
     let specification_version = manifest_map.get("specification-version");
     let bundle_name = manifest_map.get("bundle-name");
     let bundle_version = manifest_map.get("bundle-version");
-    
+
     // Try to derive mod ID and name from available info
     let mod_name = implementation_title
         .or(specification_title)
         .or(bundle_name)
         .cloned()
         .unwrap_or_else(|| "unknown".to_string());
-    
+
     let version = implementation_version
         .or(specification_version)
         .or(bundle_version)
         .cloned()
         .unwrap_or_else(|| "unknown".to_string());
-    
+
     // Convert name to a likely mod ID (lowercase, replace spaces with underscores)
-    let mod_id = mod_name.to_lowercase()
-        .replace(' ', "_")
-        .replace('-', "_");
-    
+    let mod_id = mod_name.to_lowercase().replace(' ', "_").replace('-', "_");
+
     // Only succeed if we found some meaningful info
     if mod_name == "unknown" && version == "unknown" {
         return Err(CompatError::MetadataError {
@@ -352,19 +384,18 @@ fn extract_manifest_info(archive: &mut ZipArchive<std::fs::File>, jar_path: &Pat
             reason: "No useful mod metadata found in MANIFEST.MF".to_string(),
         });
     }
-    
+
     Ok(ModInfo {
         id: mod_id,
         name: mod_name,
         version: Some(version),
         file_path: jar_path.to_path_buf(),
         enabled: true,
-        side: ModSide::Both, // Can't determine from manifest
+        side: ModSide::Both,        // Can't determine from manifest
         loader: ModLoader::Unknown, // Can't determine from manifest
         raw_metadata: HashMap::new(),
     })
 }
-
 
 fn parse_forge_side(side: &Option<String>) -> ModSide {
     match side.as_deref() {
